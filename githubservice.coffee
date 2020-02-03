@@ -1,15 +1,20 @@
 githubservice = {name: "githubservice"}
 
+#region modulesFromEnvironment
 #region node_modules
-OctokitREST = require("@octokit/rest")
-c       = require('chalk')
+{Octokit} = require("@octokit/rest")
+c = require('chalk')
+#endregion
+
+#region localModules
+globalScope = null
+cfg = null
+#endregion
 #endregion
 
 #region internalProperties
 baseUrl = "https://api.github.com"
-userAgent = "thingycreate v0.3.0"
-
-globalScope = null
+userAgent = ""
 #endregion
 
 #region essentialFunctions
@@ -27,6 +32,8 @@ printSuccess = (msg) -> console.log(c.green("\n" + msg))
 githubservice.initialize = () ->
     log "githubservice.initialize"
     globalScope = allModules.globalscopemodule
+    cfg = allModules.configmodule
+    userAgent = cfg.cli.name + " v" + cfg.cli.version
     return
 #endregion
     
@@ -37,7 +44,7 @@ getOctokit = (token) ->
         auth: token
         userAgent: userAgent
         baseUrl: baseUrl
-    return new OctokitREST(options)
+    return Octokit(options)
 
 checkAccess = (token) ->
     log "checkAccess"
