@@ -1,12 +1,19 @@
 cloudservicemodule = {name: "cloudservicemodule"}
-
-#region modulesFromEnvironment
-#region node_modules
-c = require("chalk")
+############################################################
+#region logPrintFunctions
+log = (arg) ->
+    if allModules.debugmodule.modulesToDebug["cloudservicemodule"]?  then console.log "[cloudservicemodule]: " + arg
+    return
+olog = (o) -> log "\n" + ostr(o)
+ostr = (o) -> JSON.stringify(o, null, 4)
 #endregion
 
-#region localModules
+############################################################
+#region modulesFromEnvironment
+c = require("chalk")
 
+############################################################
+#region localModules
 user = null
 urlHandler = null
 globalScope = null
@@ -14,6 +21,7 @@ userConfig = null
 #endregion
 #endregion
 
+############################################################
 #region serviceTypes
 allCloudServiceTypes = 
     github:
@@ -29,15 +37,7 @@ allCloudServiceTypes =
 allServiceTypes = Object.keys(allCloudServiceTypes)
 #endregion
 
-#region logPrintFunctions
-##############################################################################
-log = (arg) ->
-    if allModules.debugmodule.modulesToDebug["cloudservicemodule"]?  then console.log "[cloudservicemodule]: " + arg
-    return
-olog = (o) -> log "\n" + ostr(o)
-ostr = (o) -> JSON.stringify(o, null, 4)
-#endregion
-##############################################################################
+############################################################
 cloudservicemodule.initialize = ->
     log "cloudservicemodule.initialize"
     globalScope = allModules.globalscopemodule
@@ -48,6 +48,7 @@ cloudservicemodule.initialize = ->
     await m.module.initialize() for n,m of allCloudServiceTypes 
     return
 
+############################################################
 #region internalFunctions
 getDefaultThingyCloudService = (type) ->
     log "getDefaultThingyCloudService"
@@ -76,19 +77,54 @@ getStringProperties = (service) ->
     return properties
 
 
+############################################################
+serviceModule = (service) ->
+    type = service.type
+    return allCloudServiceTypes[type].module
+    
+############################################################
+#region callsToServiceModule
+############################################################
 createRepository = (service, repoName, visible) ->
     log "createRepository"
-    type = service.type
-    module = allCloudServiceTypes[type].module
-    await module.createRepository(service, repoName, visible)
+    m = serviceModule(service)
+    await m.createRepository(service, repoName, visible)
     return
 
 deleteRepository = (service, repoName) ->
     log "deleteRepository"
-    type = service.type
-    module = allCloudServiceTypes[type].module
-    await module.deleteRepository(service, repoName)
+    m = serviceModule(service)
+    await m.deleteRepository(service, repoName)
     return
+
+############################################################
+addDeployKey = (service, repoName, pubKey, title) ->
+    log "addDeployKey"
+    m = serviceModule(service)
+    await m.addDeployKey(service, repoName, pubKey, title)
+    return
+
+removeDeployKey = (service, repoName, title) ->
+    log "removeDeployKey"
+    m = serviceModule(service)
+    await m.removeDeployKey(service, repoName, title)
+    return
+
+############################################################
+addWebhook = (service, repoName, url, secret) ->
+    log "addWebhook"
+    m = serviceModule(service)
+    await m.addWebhook(service, repoName, url, secret)
+    return
+
+removeWebhook = (service, repoName, url) ->
+    log "removeWebhook"
+    m = serviceModule(service)
+    await m.removeWebhook(service, repoName, url)
+    return
+#endregion
+
+############################################################
 #region urlRelatedFunctions
 getSSHURLBaseForUnknownService = (service) ->
     log "getSSHURLBaseForUnknownService"
@@ -137,6 +173,7 @@ serviceFitsURL = (service, url) ->
     return baseURL == serviceBasePath
 #endregion
 
+############################################################
 #region serviceChoiceLabel
 getServiceChoiceLabel = (service, index) ->
     log "getServiceChoiceLabel"
@@ -162,14 +199,15 @@ getAllServiceChoices = ->
 #endregion
 #endregion
 
+############################################################
 #region exposed
 cloudservicemodule.check = (service) ->
     log "cloudservicemodule.checkService"
-    type = service.type
-    module = allCloudServiceTypes[type].module
-    await module.check(service)
+    m = serviceModule(service)
+    await m.check(service)
     return
 
+############################################################
 #region interfaceForUserActions
 cloudservicemodule.createConnection = () ->
     log "cloudservicemodule.createConnection"
@@ -213,6 +251,7 @@ cloudservicemodule.serviceAndRepoFromURL = (url) ->
     service = getServiceObjectFromURL(url)
     return {service, repoName}
 
+############################################################
 cloudservicemodule.createRepository = (repo, visible) ->
     log "cloudservicemodule.createRepository"
     service = userConfig.getMasterService()
@@ -224,11 +263,41 @@ cloudservicemodule.deleteRepository = (repo) ->
     log "cloudservicemodule.deleteRepository"
     loop
         service = globalScope.serviceForRepo(repo)
+        return unless service
         await deleteRepository(service, repo)
         globalScope.removeRepoFromServiceScope(repo, service)
-        if !globalScope.repoIsInScope(repo) then return
     return
 
+############################################################
+cloudservicemodule.addDeployKey = (repoName, pubKey, title) ->
+    log "cloudservicemodule.addDeployKey"
+    service = globalScope.serviceForRepo(repoName)
+    return unless service
+    await addDeployKey(service, repoName, pubKey, title)
+    return
+
+cloudservicemodule.removeDeployKey = (repoName, title) ->
+    log "cloudservicemodule.removeDeployKey"
+    service = globalScope.serviceForRepo(repoName)
+    return unless service
+    await removeDeployKey(service, repoName, title)
+    return
+
+cloudservicemodule.addWebhook = (repoName, url, secret) ->
+    log "cloudservicemodule.addWebhook"
+    service = globalScope.serviceForRepo(repoName)
+    return unless service
+    await addWebhook(service, repoName, url, secret)
+    return
+
+cloudservicemodule.removeWebhook = (repoName, url) ->
+    log "cloudservicemodule.removeWebhook"
+    service = globalScope.serviceForRepo(repoName)
+    return unless service
+    await removeWebhook(service, repoName, url)
+    return
+
+############################################################
 #region exposedInternals
 cloudservicemodule.getSSHBaseForService = (service) -> sshURLBaseForService(service)
 cloudservicemodule.getHTTPSBaseForService = (service) -> httpsURLBaseForService(service)
