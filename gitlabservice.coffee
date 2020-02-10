@@ -39,14 +39,17 @@ getGitlab = (host, token) ->
 checkAccess = (service) ->
     log "checkAccess" 
     gitlab = getGitlab(service.hostURL, service.accessToken)       
-    try
-        options = 
-            username: service.username
-            maxPages: 1
-        await gitlab.Users.all(options)
+    try 
+        userId = await getCurrentUserId(service)
+        if !service.userId then service.userId = userId
+        else if service.userId != userId then throw new Error("No userId match!")
         return true
     catch err then return false
 
+getRepoIdString = (service, repo) ->
+    return service.username + "/" + repo
+    # return service.username + "%2F" + repo
+    
 ############################################################
 #region retrieveAllFunctions
 retrieveAllRepositories = (service) ->
@@ -56,52 +59,32 @@ retrieveAllRepositories = (service) ->
         owned: true
         simple: true
         perPage: 100
-        maxPages: 1000    
-    data = await gitlab.Projects.all(options)
+        maxPages: 100    
+    data = await gitlab.Users.projects(service.userId, options)
     return data.map((project) -> project.name)
 
 retrieveAllDeployKeys = (service, repo) ->
-    log "retrieveAllDeployKeys"
-    octokit = getOctokit(service.accessToken)
+    gitlab = getGitlab(service.hostURL, service.accessToken)       
+    stringId = getRepoIdString(service, repo)
     options = 
-        owner: service.username
-        repo: repo
-        per_page: 100
-        page: 0
-
-    results = []
-    loop
-        answer = await octokit.repos.listDeployKeys(options)
-        keys = answer.data
-        # keys =  (key for key in data)
-        options.page++    
-        if keys.length then results = results.concat(keys)
-        else return results
-    return
+        projectId: stringId
+        perPage: 100
+        maxPages: 100
+    return await gitlab.DeployKeys.all(options)
 
 retrieveAllWebhooks = (service, repo) ->
-    log "retrieveAllWebhooks"
-    octokit = getOctokit(service.accessToken)
+    gitlab = getGitlab(service.hostURL, service.accessToken)       
+    stringId = getRepoIdString(service, repo)
     options = 
-        owner: service.username
-        repo: repo
-        per_page: 100
-        page: 0
-    results = []
-    loop
-        answer = await octokit.repos.listHooks(options)
-        hooks = answer.data
-        # hooks =  (hook for hook in data)
-        options.page++    
-        if hooks.length then results = results.concat(hooks)
-        else return results
-    return
+        perPage: 100
+        maxPages: 100
+    return await gitlab.ProjectHooks.all(stringId, options)
+
 #endregion
 
 ############################################################
 #region retrieveSingleIds
 getDeletableProjectID = (projects, service, repo) ->
-    log "selectDeletableProject"
     pathWithNamespace = service.username + "/" + repo
     for project in projects
         if project.path_with_namespace.toLowerCase() == pathWithNamespace.toLowerCase()
@@ -111,8 +94,9 @@ getDeletableProjectID = (projects, service, repo) ->
     throw "getDeletableProjectID: did not find deletable project!" + debugMessage
 
 getDeployKeyId = (service, repo, title) ->
+    log "getDeployKeyId"
     allKeys = await retrieveAllDeployKeys(service, repo)
-    # olog allKeys
+    olog allKeys
     for key in allKeys
         return key.id if title == key.title
     throw new Error("No deployKey found! title: " + title)
@@ -121,8 +105,14 @@ getWebhookId = (service, repo, url) ->
     allHooks = await retrieveAllWebhooks(service, repo)
     # olog allHooks
     for hook in allHooks
-        return hook.id if url == hook.config.url
+        return hook.id if url == hook.url
     throw new Error("No Webhook found! url: " + url)
+
+getCurrentUserId = (service) ->
+    gitlab = getGitlab(service.hostURL, service.accessToken)       
+    user = await gitlab.Users.current()
+    return user.id
+
 #endregion
 
 ############################################################
@@ -161,55 +151,45 @@ deleteRepository = (service, repo) ->
 ############################################################
 addDeployKey  = (service, repo, key, title) ->
     log "addDeployKey"
-    octokit = getOctokit(service.accessToken)
+    gitlab = getGitlab(service.hostURL, service.accessToken)
+    stringId = getRepoIdString(service, repo)
     options = 
-        repo: repo
-        owner: service.username
-        key: key
         title: title
-    await octokit.repos.addDeployKey(options)
+        key: key
+    await gitlab.DeployKeys.add(stringId, options)
     return
     
 removeDeployKey = (service, repo, title) ->
     log "removeDeployKey"
-    octokit = getOctokit(service.accessToken)
+    gitlab = getGitlab(service.hostURL, service.accessToken)       
+    stringId = getRepoIdString(service, repo)
     keyId = await getDeployKeyId(service, repo, title)
-    log "keyId: " + keyId
-    options = 
-        repo: repo
-        owner: service.username
-        key_id: keyId
-    await octokit.repos.removeDeployKey(options)
+    log "on repo with stringId: " + stringId
+    log "trying to remove deploy key with keyId: " + keyId
+    await gitlab.DeployKeys.remove(stringId, keyId)
     return
-    
+
 ############################################################
 addWebhook = (service, repo, url, secret) ->
     log "addWebhook"
-    octokit = getOctokit(service.accessToken)
-    config = 
-        url: url
-        content_type: "json"
-        secret: secret
+    gitlab = getGitlab(service.hostURL, service.accessToken)       
+    stringId = getRepoIdString(service, repo)
     options = 
-        repo: repo
-        owner: service.username
-        config: config
-        events: ["push"]
-    await octokit.repos.createHook(options)
+        push_events: true
+        token: secret
+    await gitlab.ProjectHooks.add(stringId, url, options)
     return
 
 removeWebhook = (service, repo, url) ->
     log "removeWebhook"
-    octokit = getOctokit(service.accessToken)
+    gitlab = getGitlab(service.hostURL, service.accessToken)       
+    stringId = getRepoIdString(service, repo)
     hookId = await getWebhookId(service, repo, url)
-    log "hookId: " + hookId
-    options = 
-        repo: repo
-        owner: service.username
-        hook_id: hookId
-    await octokit.repos.deleteHook(options)
+    await gitlab.ProjectHooks.remove(stringId, hookId)
     return
+
 #endregion
+
 #endregion
 
 ############################################################
