@@ -40,7 +40,7 @@ getOctokit = (token) ->
         auth: token
         userAgent: userAgent
         baseUrl: baseUrl
-    return Octokit(options)
+    return new Octokit(options)
 
 checkAccess = (token) ->
     log "checkAccess"
@@ -56,7 +56,6 @@ retrieveAllRepositories = (service) ->
     log "retrieveAllRepositories"
     octokit = getOctokit(service.accessToken)
     options = 
-        owner: service.username
         visibility: "all"
         affiliation: "owner"
         sort: "updated"
@@ -66,7 +65,7 @@ retrieveAllRepositories = (service) ->
 
     results = []
     loop
-        answer = await octokit.repos.list(options)
+        answer = await octokit.repos.listForAuthenticatedUser(options)
         data = answer.data
         names = (repo.name for repo in data)
         options.page++    
